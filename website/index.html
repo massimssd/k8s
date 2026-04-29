@@ -70,7 +70,9 @@
         <div class="prereq-item"><span class="icon">💚</span><div>Endpoint <code>/health</code></div></div>
         <div class="prereq-item"><span class="icon">⚙️</span><div>Endpoint <code>/config</code> et <code>/info</code></div></div>
         <div class="prereq-item"><span class="icon">💾</span><div>Stockage persistant dans <code>/data</code></div></div>
-        <div class="prereq-item"><span class="icon">🔐</span><div>Secrets d'application (APP_SECRET, ADMIN_PASSWORD)</div></div>
+        <div class="prereq-item"><span class="icon">🔐</span><div><strong>Authentification admin</strong> via Secret K8s (ADMIN_PASSWORD + APP_SECRET)</div></div>
+        <div class="prereq-item"><span class="icon">🔑</span><div>Page de login avec token HMAC signé par APP_SECRET</div></div>
+        <div class="prereq-item"><span class="icon">🛡️</span><div>Suppression protégée (requiert authentification)</div></div>
       </div>
     </div>
   </section>
@@ -158,7 +160,7 @@
           <div class="step-number">3</div>
           <div>
             <div class="step-title">Créer un Secret</div>
-            <div class="step-desc">Stocker les données sensibles de l'application (mots de passe, clés secrètes).</div>
+            <div class="step-desc">Stocker les données sensibles : mot de passe admin et clé de signature des tokens.</div>
           </div>
         </div>
         <div class="step-body">
@@ -171,6 +173,12 @@
           </ul>
           <h4>📖 Ce que vous devez savoir</h4>
           <p>Un <strong>Secret</strong> est similaire à un ConfigMap mais conçu pour les données sensibles. Les valeurs sont encodées en base64 (attention : encodé ≠ chiffré).</p>
+          <h4>🔐 Utilisation concrète des Secrets dans l'application</h4>
+          <ul>
+            <li><code>ADMIN_PASSWORD</code> → utilisé pour <strong>la page de login</strong> (<code>POST /api/login</code>). L'utilisateur doit entrer ce mot de passe pour se connecter en tant qu'admin.</li>
+            <li><code>APP_SECRET</code> → utilisé pour <strong>signer les tokens HMAC-SHA256</strong>. Après le login, un token signé est généré et requis pour les opérations de suppression.</li>
+            <li>Sans authentification, la suppression de notes et fichiers est <strong>bloquée</strong> (🔒).</li>
+          </ul>
           <div class="hint">💡 <strong>Indice :</strong> Pour encoder en base64 : <code>echo -n "ma-valeur" | base64</code>. Contrairement au ConfigMap, les valeurs vont dans <code>data:</code> en base64.</div>
           <div class="verify">kubectl get secret -n demo-app<br>kubectl describe secret demo-app-secret -n demo-app</div>
         </div>
@@ -321,8 +329,9 @@
             <li>Vérifier que le PVC est <code>Bound</code></li>
             <li>Tester <code>/health</code>, <code>/version</code>, <code>/config</code></li>
             <li>Créer une note via l'interface web ou l'API</li>
+            <li><strong>Tester le login</strong> : cliquer sur "🔐 Connexion Admin" et entrer le mot de passe du Secret K8s</li>
+            <li><strong>Vérifier la protection</strong> : essayer de supprimer une note sans être connecté (doit être bloqué)</li>
             <li>Supprimer un pod et vérifier que la note persiste</li>
-            <li>Observer que Kubernetes recrée automatiquement le pod</li>
           </ul>
           <pre><code># Vérification complète
 kubectl get all -n demo-app
@@ -335,10 +344,18 @@ curl http://demo.local/health
 curl http://demo.local/version
 curl http://demo.local/config
 
+# Test du login (utilise ADMIN_PASSWORD du Secret K8s)
+curl -X POST http://demo.local/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"VOTRE_ADMIN_PASSWORD"}'
+
 # Créer une note via API
 curl -X POST http://demo.local/api/notes \
   -H "Content-Type: application/json" \
   -d '{"title":"Ma première note K8s","content":"Déployée avec succès!","category":"important"}'
+
+# Tester la suppression sans token (doit échouer avec 401)
+curl -X DELETE http://demo.local/api/notes/ID_NOTE
 
 # Supprimer un pod et vérifier la persistance
 kubectl delete pod -n demo-app -l app=k8s-demo --wait=false

@@ -162,10 +162,78 @@ data:
             <tr><th>Champ</th><th>Explication</th></tr>
             <tr><td>type: Opaque</td><td>Type générique pour les secrets arbitraires</td></tr>
             <tr><td>data</td><td>Valeurs encodées en base64 (pas en clair !)</td></tr>
-            <tr><td>APP_SECRET</td><td>Clé secrète utilisée par l'application</td></tr>
-            <tr><td>ADMIN_PASSWORD</td><td>Mot de passe admin, injecté comme variable d'env</td></tr>
+            <tr><td>APP_SECRET</td><td>Clé utilisée pour <strong>signer les tokens HMAC-SHA256</strong> après le login</td></tr>
+            <tr><td>ADMIN_PASSWORD</td><td>Mot de passe admin, vérifié par <code>POST /api/login</code></td></tr>
           </table>
         </div>
+
+        <!-- 3b. Utilisation concrète des Secrets -->
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-secret">🔐</div>
+            <div><div class="k8s-object-title">3b. Utilisation des Secrets dans l'Application</div><div class="k8s-object-subtitle">Authentification, Login et Tokens signés</div></div>
+          </div>
+          <div class="explanation">
+            <strong>Comment les Secrets sont utilisés concrètement ?</strong><br><br>
+            🔑 <strong>ADMIN_PASSWORD</strong> → L'utilisateur clique sur "🔐 Connexion Admin" dans l'interface. Le backend vérifie le mot de passe contre la variable <code>ADMIN_PASSWORD</code> injectée depuis le Secret K8s.<br><br>
+            🔒 <strong>APP_SECRET</strong> → Après un login réussi, un token est généré et signé avec HMAC-SHA256 en utilisant <code>APP_SECRET</code>. Ce token est requis pour les opérations de suppression.<br><br>
+            🛡️ <strong>Protection</strong> → Sans authentification, les boutons de suppression affichent un 🔒 et les requêtes DELETE retournent une erreur 401.
+          </div>
+          <pre><code># Backend (server.js) — Login avec ADMIN_PASSWORD
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  // ADMIN_PASSWORD provient du Secret Kubernetes
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Mot de passe incorrect' });
+  }
+  // Générer un token signé avec APP_SECRET (du Secret K8s)
+  const token = generateToken(username);
+  res.json({ message: 'Connexion réussie', user: username, token });
+});
+
+# Génération de token HMAC-SHA256 avec APP_SECRET
+function generateToken(username) {
+  const payload = JSON.stringify({
+    user: username,
+    iat: Date.now(),
+    exp: Date.now() + 3600000, // 1 heure
+  });
+  const payloadB64 = Buffer.from(payload).toString('base64');
+  const signature = crypto
+    .createHmac('sha256', APP_SECRET)  // ← Secret K8s !
+    .update(payloadB64)
+    .digest('hex');
+  return `${payloadB64}.${signature}`;
+}
+
+# Routes protégées par le token
+app.delete('/api/notes/:id', requireAuth, (req, res) => {
+  // requireAuth vérifie le token signé avec APP_SECRET
+  // ...
+});</code></pre>
+          <pre><code># Test depuis le terminal
+
+# 1. Login (utilise ADMIN_PASSWORD du Secret)
+curl -X POST http://demo.local/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"AdminK8s@Secure!"}'
+# → Retourne un token signé avec APP_SECRET
+
+# 2. Supprimer sans token (REJETÉ - 401)
+curl -X DELETE http://demo.local/api/notes/mon-id
+# → {"error": "Authentification requise"}
+
+# 3. Supprimer avec token (ACCEPTÉ)
+curl -X DELETE http://demo.local/api/notes/mon-id \
+  -H "Authorization: Bearer VOTRE_TOKEN"
+# → {"message": "Note supprimée"}</code></pre>
+          <table class="fields-table">
+            <tr><th>Secret K8s</th><th>Utilisation dans l'App</th></tr>
+            <tr><td>ADMIN_PASSWORD</td><td>Vérifié par POST /api/login pour authentifier l'admin</td></tr>
+            <tr><td>APP_SECRET</td><td>Signe les tokens HMAC-SHA256 (garantit l'intégrité)</td></tr>
+          </table>
+        </div>
+
 
         <!-- 4. PV -->
         <div class="k8s-object">
