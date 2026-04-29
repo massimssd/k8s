@@ -1,0 +1,12 @@
+# ConfigMap — Variables non sensibles (depuis values.yaml)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "demo-app.fullname" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

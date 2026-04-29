@@ -1,0 +1,7 @@
+# Namespace — Isolation logique
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}

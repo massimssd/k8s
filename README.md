@@ -16,9 +16,11 @@ Application web complète conçue pour démontrer et manipuler les principaux ob
 4. [Lancement local](#-lancement-local)
 5. [Build Docker](#-build-docker)
 6. [Déploiement Kubernetes](#-déploiement-kubernetes)
-7. [Vérifications](#-vérifications)
-8. [Objets Kubernetes expliqués](#-objets-kubernetes-expliqués)
-9. [Exercices pratiques](#-exercices-pratiques)
+7. [Déploiement Helm](#-déploiement-helm)
+8. [Déploiement ArgoCD](#-déploiement-argocd)
+9. [Vérifications](#-vérifications)
+10. [Objets Kubernetes expliqués](#-objets-kubernetes-expliqués)
+11. [Exercices pratiques](#-exercices-pratiques)
 
 ---
 
@@ -84,19 +86,40 @@ tp-k8s/
 ├── Dockerfile                # Image Docker multi-stage
 ├── .dockerignore
 ├── README.md
-└── k8s/
-    ├── namespace.yaml        # Namespace demo-app
-    ├── configmap.yaml        # Variables non sensibles
-    ├── secret.yaml           # Variables sensibles (base64)
-    ├── pv.yaml               # PersistentVolume (hostPath)
-    ├── pvc.yaml              # PersistentVolumeClaim
-    ├── deployment.yaml       # Deployment (2 replicas)
-    ├── service.yaml          # Service ClusterIP
-    ├── ingress.yaml          # Ingress (demo.local)
-    ├── job-init.yaml         # Job d'initialisation (bonus)
-    ├── networkpolicy.yaml    # NetworkPolicy (bonus)
-    ├── hpa.yaml              # HorizontalPodAutoscaler (bonus)
-    └── kustomization.yaml    # Kustomize (bonus)
+├── k8s/
+│   ├── namespace.yaml        # Namespace demo-app
+│   ├── configmap.yaml        # Variables non sensibles
+│   ├── secret.yaml           # Variables sensibles (base64)
+│   ├── pv.yaml               # PersistentVolume (hostPath)
+│   ├── pvc.yaml              # PersistentVolumeClaim
+│   ├── deployment.yaml       # Deployment (2 replicas)
+│   ├── service.yaml          # Service ClusterIP
+│   ├── ingress.yaml          # Ingress (demo.local)
+│   ├── job-init.yaml         # Job d'initialisation (bonus)
+│   ├── networkpolicy.yaml    # NetworkPolicy (bonus)
+│   ├── hpa.yaml              # HorizontalPodAutoscaler (bonus)
+│   └── kustomization.yaml    # Kustomize (bonus)
+├── helm/
+│   └── demo-app/
+│       ├── Chart.yaml        # Métadonnées du chart Helm
+│       ├── values.yaml       # Valeurs par défaut (configurable)
+│       └── templates/        # Templates Kubernetes
+│           ├── _helpers.tpl  # Fonctions Go template
+│           ├── namespace.yaml
+│           ├── configmap.yaml
+│           ├── secret.yaml
+│           ├── persistence.yaml  # PV + PVC
+│           ├── deployment.yaml
+│           ├── service.yaml
+│           ├── ingress.yaml
+│           ├── hpa.yaml
+│           ├── networkpolicy.yaml
+│           └── NOTES.txt     # Instructions post-install
+└── argocd/
+    ├── README.md                 # Guide ArgoCD
+    ├── project.yaml              # AppProject (isolation)
+    ├── application-manifests.yaml # Déploiement via k8s/ brut
+    └── application-helm.yaml     # Déploiement via Helm chart
 ```
 
 ---
@@ -203,7 +226,88 @@ kubectl apply -f k8s/
 
 ---
 
-## ✅ Vérifications
+## ☸ Déploiement Helm
+
+### Valider le chart
+
+```bash
+helm lint helm/demo-app/
+```
+
+### Installer
+
+```bash
+helm install demo-app helm/demo-app/ --create-namespace
+```
+
+### Personnaliser les valeurs
+
+```bash
+# Changer le nombre de replicas et le host
+helm install demo-app helm/demo-app/ \
+  --set replicaCount=3 \
+  --set ingress.host=myapp.example.com \
+  --set config.APP_NAME="Mon App Custom"
+
+# Ou avec un fichier de valeurs custom
+helm install demo-app helm/demo-app/ -f my-values.yaml
+```
+
+### Mettre à jour
+
+```bash
+helm upgrade demo-app helm/demo-app/
+```
+
+### Désinstaller
+
+```bash
+helm uninstall demo-app
+```
+
+---
+
+## 🔄 Déploiement ArgoCD (GitOps)
+
+### Prérequis : Installer ArgoCD
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=120s
+
+# Récupérer le mot de passe admin
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+
+# Accéder à l'UI
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Ouvrir https://localhost:8080
+```
+
+### Option 1 : Déployer via manifests K8s bruts
+
+```bash
+kubectl apply -f argocd/project.yaml
+kubectl apply -f argocd/application-manifests.yaml
+```
+
+### Option 2 : Déployer via Helm chart
+
+```bash
+kubectl apply -f argocd/project.yaml
+kubectl apply -f argocd/application-helm.yaml
+```
+
+### Vérifier
+
+```bash
+kubectl get applications -n argocd
+argocd app list
+argocd app get demo-app-helm
+```
+
+> 💡 ArgoCD synchronise automatiquement les changements poussés sur `main` grâce à `selfHeal: true` et `prune: true`.
+
 
 ### État des ressources
 

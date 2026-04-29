@@ -1,0 +1,55 @@
+# ============================================================
+# ArgoCD AppProject — Projet dédié au TP Kubernetes
+# Auteur: KHLIFI HOUCEM / FORMATEUR DEVSECOPS & CLOUD
+# ============================================================
+# Un AppProject isole les applications et restreint les accès
+# ============================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tp-kubernetes
+  namespace: argocd
+  labels:
+    author: khlifi-houcem
+spec:
+  description: "Projet ArgoCD pour le TP Kubernetes - KHLIFI HOUCEM"
+
+  # Repos autorisés
+  sourceRepos:
+    - https://github.com/houcemdevops007/TP-K8s-demo.git
+    - git@github.com:houcemdevops007/TP-K8s-demo.git
+
+  # Destinations autorisées
+  destinations:
+    - namespace: demo-app
+      server: https://kubernetes.default.svc
+    - namespace: demo-app-staging
+      server: https://kubernetes.default.svc
+
+  # Types de ressources autorisés dans le cluster
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: ""
+      kind: PersistentVolume
+
+  # Types de ressources autorisés dans le namespace
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: "apps"
+      kind: Deployment
+    - group: "networking.k8s.io"
+      kind: Ingress
+    - group: "networking.k8s.io"
+      kind: NetworkPolicy
+    - group: "batch"
+      kind: Job
+    - group: "autoscaling"
+      kind: HorizontalPodAutoscaler

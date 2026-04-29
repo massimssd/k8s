@@ -1,0 +1,78 @@
+# Deployment — Cœur du déploiement applicatif
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: {{ .Values.strategy.type }}
+    {{- if eq .Values.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.strategy.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.strategy.rollingUpdate.maxUnavailable }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "demo-app.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.targetPort }}
+              name: http
+
+          # Variables depuis ConfigMap
+          envFrom:
+            - configMapRef:
+                name: {{ include "demo-app.fullname" . }}-config
+
+          # Variables depuis Secret (ADMIN_PASSWORD + APP_SECRET)
+          env:
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "demo-app.fullname" . }}-secret
+                  key: APP_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "demo-app.fullname" . }}-secret
+                  key: ADMIN_PASSWORD
+
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+          {{- end }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: {{ include "demo-app.fullname" . }}-pvc
+      {{- end }}
+
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30

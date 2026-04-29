@@ -1,0 +1,17 @@
+1. Validate this chart
+  helm lint helm/demo-app/
+
+2. Install the chart
+  helm install demo-app helm/demo-app/ --create-namespace
+
+3. Upgrade after changes
+  helm upgrade demo-app helm/demo-app/
+
+4. Uninstall
+  helm uninstall demo-app
+
+5. Override values
+  helm install demo-app helm/demo-app/ \
+    --set replicaCount=3 \
+    --set ingress.host=myapp.example.com \
+    --set config.APP_NAME="My Custom App"

@@ -1,0 +1,22 @@
+# ============================================================
+# Helm Chart - K8s Demo Notes
+# Auteur: KHLIFI HOUCEM / FORMATEUR DEVSECOPS & CLOUD
+# ============================================================
+apiVersion: v2
+name: demo-app
+description: Application de démonstration Kubernetes - Gestion de Notes avec authentification
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - demo
+  - notes
+  - devops
+  - formation
+maintainers:
+  - name: KHLIFI HOUCEM
+    email: khlifi.houcem@formateur.dev
+home: https://github.com/houcemdevops007/TP-K8s-demo
+sources:
+  - https://github.com/houcemdevops007/TP-K8s-demo

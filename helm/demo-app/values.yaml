@@ -1,0 +1,105 @@
+# ============================================================
+# Helm Values - K8s Demo Notes
+# Auteur: KHLIFI HOUCEM / FORMATEUR DEVSECOPS & CLOUD
+# ============================================================
+
+# ── Image Docker ─────────────────────────────────────────────
+image:
+  repository: k8s-demo-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ── Replicas ─────────────────────────────────────────────────
+replicaCount: 2
+
+# ── Namespace ────────────────────────────────────────────────
+namespace: demo-app
+
+# ── Service ──────────────────────────────────────────────────
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# ── Ingress ──────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  host: demo.local
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+
+# ── ConfigMap (variables non sensibles) ──────────────────────
+config:
+  APP_NAME: "K8s Demo Notes"
+  APP_ENV: "production"
+  APP_VERSION: "1.0.0"
+  LOG_LEVEL: "info"
+  STORAGE_PATH: "/data"
+  FEATURE_UPLOAD_ENABLED: "true"
+  PORT: "3000"
+
+# ── Secret (variables sensibles, base64) ─────────────────────
+secret:
+  APP_SECRET: "bW9uLXN1cGVyLXNlY3JldC1rOHMtMjAyNA=="
+  ADMIN_PASSWORD: "QWRtaW5LOHNAU2VjdXJlIQ=="
+
+# ── Stockage persistant ──────────────────────────────────────
+persistence:
+  enabled: true
+  storageClassName: demo-storage
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  hostPath: /tmp/demo-app-data
+
+# ── Ressources ───────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# ── Probes de santé ──────────────────────────────────────────
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# ── Stratégie de déploiement ─────────────────────────────────
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# ── HPA (Auto-scaling) ──────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+# ── NetworkPolicy ────────────────────────────────────────────
+networkPolicy:
+  enabled: false
+
+# ── Job d'initialisation ─────────────────────────────────────
+initJob:
+  enabled: false
+  ttlSecondsAfterFinished: 300

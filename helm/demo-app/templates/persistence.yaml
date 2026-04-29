@@ -1,0 +1,36 @@
+{{- if .Values.persistence.enabled }}
+# PersistentVolume — Stockage physique
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "demo-app.fullname" . }}-pv
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    type: local
+spec:
+  capacity:
+    storage: {{ .Values.persistence.size }}
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  hostPath:
+    path: {{ .Values.persistence.hostPath }}
+    type: DirectoryOrCreate
+---
+# PersistentVolumeClaim — Demande de stockage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "demo-app.fullname" . }}-pvc
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  storageClassName: {{ .Values.persistence.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}
