@@ -29,7 +29,8 @@
         <div><h1>TP Kubernetes — Correction</h1><small>KHLIFI HOUCEM — FORMATEUR DEVSECOPS & CLOUD</small></div>
       </div>
       <nav class="nav-links">
-        <a href="index.html" class="nav-link">📝 Énoncé</a>
+        <a href="index.html" class="nav-link">📝 Énoncé K8s</a>
+        <a href="helm-argocd.html" class="nav-link">⛵ Helm & ArgoCD</a>
         <a href="correction.html" class="nav-link active">🔒 Correction</a>
       </nav>
     </div>
@@ -614,6 +615,335 @@ curl http://demo.local/config
 
 # Consulter les données sur le nœud
 minikube ssh -- cat /tmp/demo-app-data/notes.json</code></pre>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── Correction Helm ─────────────────────────────────── -->
+    <section class="steps">
+      <div class="container">
+        <h3 class="section-title">⛵ Correction — Helm Chart</h3>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-deploy">⛵</div>
+            <div><div class="k8s-object-title">Chart.yaml</div><div class="k8s-object-subtitle">Métadonnées du Helm Chart</div></div>
+          </div>
+          <div class="explanation">
+            <strong>Chart.yaml</strong> est la carte d'identité du chart. <code>apiVersion: v2</code> = Helm 3. <code>version</code> = version du chart, <code>appVersion</code> = version de l'app.
+          </div>
+          <pre><code>apiVersion: v2
+name: demo-app
+description: Application de démonstration Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+maintainers:
+  - name: KHLIFI HOUCEM
+home: https://github.com/houcemdevops007/TP-K8s-demo</code></pre>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-cm">📋</div>
+            <div><div class="k8s-object-title">values.yaml</div><div class="k8s-object-subtitle">Valeurs configurables</div></div>
+          </div>
+          <div class="explanation">
+            Centralise toute la configuration. Surchargeable avec <code>--set</code> ou <code>-f custom.yaml</code>. Les blocs <code>enabled: false</code> activent/désactivent des fonctionnalités.
+          </div>
+          <pre><code>image:
+  repository: k8s-demo-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+namespace: demo-app
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: demo.local
+
+config:
+  APP_NAME: "K8s Demo Notes"
+  APP_ENV: "production"
+  STORAGE_PATH: "/data"
+  FEATURE_UPLOAD_ENABLED: "true"
+  PORT: "3000"
+
+secret:
+  APP_SECRET: bW9uLXN1cGVyLXNlY3JldC1rOHMtMjAyNA==
+  ADMIN_PASSWORD: QWRtaW5LOHNAU2VjdXJlIQ==
+
+persistence:
+  enabled: true
+  storageClassName: demo-storage
+  size: 1Gi
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits:   { cpu: 500m, memory: 256Mi }
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5</code></pre>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-secret">🔧</div>
+            <div><div class="k8s-object-title">templates/_helpers.tpl</div><div class="k8s-object-subtitle">Fonctions Go template réutilisables</div></div>
+          </div>
+          <pre><code>{{/* Nom complet */}}
+{{- define "demo-app.fullname" -}}
+{{- printf "%s-%s" .Release.Name .Chart.Name | trunc 63 }}
+{{- end }}
+
+{{/* Labels standards */}}
+{{- define "demo-app.labels" -}}
+helm.sh/chart: {{ .Chart.Name }}
+app.kubernetes.io/name: {{ .Chart.Name }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app: k8s-demo
+{{- end }}
+
+{{/* Sélecteurs */}}
+{{- define "demo-app.selectorLabels" -}}
+app: k8s-demo
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}</code></pre>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-deploy">🚀</div>
+            <div><div class="k8s-object-title">templates/deployment.yaml</div><div class="k8s-object-subtitle">Template principal</div></div>
+          </div>
+          <div class="explanation">
+            Points clés : <code>{{ .Values.xxx }}</code> injecte les valeurs • <code>checksum/config</code> force le redéploiement quand ConfigMap change • <code>toYaml</code> sérialise un bloc YAML entier.
+          </div>
+          <pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath
+          "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "demo-app.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          envFrom:
+            - configMapRef:
+                name: {{ include "demo-app.fullname" . }}-config
+          env:
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "demo-app.fullname" . }}-secret
+                  key: APP_SECRET
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "demo-app.fullname" . }}-secret
+                  key: ADMIN_PASSWORD
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}</code></pre>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-svc">⚡</div>
+            <div><div class="k8s-object-title">Commandes Helm</div><div class="k8s-object-subtitle">Cycle de vie complet</div></div>
+          </div>
+          <pre><code># Valider
+helm lint helm/demo-app/
+
+# Prévisualiser (sans appliquer)
+helm template demo-app helm/demo-app/
+
+# Installer
+helm install demo-app helm/demo-app/ --create-namespace
+
+# Installer avec overrides
+helm install demo-app helm/demo-app/ \
+  --set replicaCount=3 \
+  --set ingress.host=myapp.local
+
+# Upgrade / Rollback / Historique
+helm upgrade demo-app helm/demo-app/
+helm rollback demo-app 1
+helm history demo-app
+
+# Désinstaller
+helm uninstall demo-app</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Correction ArgoCD ───────────────────────────────── -->
+    <section class="steps">
+      <div class="container">
+        <h3 class="section-title">🔄 Correction — ArgoCD (GitOps)</h3>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-ns">📁</div>
+            <div><div class="k8s-object-title">project.yaml</div><div class="k8s-object-subtitle">AppProject — Isolation</div></div>
+          </div>
+          <div class="explanation">
+            Le <strong>AppProject</strong> isole les applications ArgoCD. Il restreint les repos, les namespaces cibles, et les types de ressources autorisés.
+          </div>
+          <pre><code>apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tp-kubernetes
+  namespace: argocd
+spec:
+  description: "Projet ArgoCD pour le TP Kubernetes"
+  sourceRepos:
+    - https://github.com/houcemdevops007/TP-K8s-demo.git
+  destinations:
+    - namespace: demo-app
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: ""
+      kind: PersistentVolume
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: "apps"
+      kind: Deployment
+    - group: "networking.k8s.io"
+      kind: Ingress</code></pre>
+          <table class="fields-table">
+            <tr><th>Champ</th><th>Explication</th></tr>
+            <tr><td>sourceRepos</td><td>Repos Git autorisés</td></tr>
+            <tr><td>destinations</td><td>Namespace + cluster cibles</td></tr>
+            <tr><td>clusterResourceWhitelist</td><td>Ressources cluster (PV, Namespace)</td></tr>
+            <tr><td>namespaceResourceWhitelist</td><td>Ressources namespace autorisées</td></tr>
+          </table>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-ing">🚀</div>
+            <div><div class="k8s-object-title">application-helm.yaml</div><div class="k8s-object-subtitle">Application ArgoCD via Helm</div></div>
+          </div>
+          <div class="explanation">
+            ArgoCD détecte <code>Chart.yaml</code> et active le mode Helm. <code>prune: true</code> supprime les ressources obsolètes. <code>selfHeal: true</code> corrige les modifications manuelles (kubectl scale, edit...).
+          </div>
+          <pre><code>apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-helm
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/houcemdevops007/TP-K8s-demo.git
+    targetRevision: main
+    path: helm/demo-app
+    helm:
+      releaseName: demo-app
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m</code></pre>
+          <table class="fields-table">
+            <tr><th>Champ</th><th>Explication</th></tr>
+            <tr><td>source.path</td><td>Chemin vers le chart dans le repo</td></tr>
+            <tr><td>source.helm.releaseName</td><td>Nom de la release Helm</td></tr>
+            <tr><td>prune: true</td><td>Supprime les ressources retirées de Git</td></tr>
+            <tr><td>selfHeal: true</td><td>Corrige les modifications manuelles</td></tr>
+            <tr><td>finalizers</td><td>Nettoyage auto à la suppression</td></tr>
+            <tr><td>retry.backoff</td><td>Retry exponentiel (5s → 10s → 20s)</td></tr>
+          </table>
+        </div>
+
+        <div class="k8s-object">
+          <div class="k8s-object-header">
+            <div class="k8s-badge badge-deploy">⚡</div>
+            <div><div class="k8s-object-title">Commandes ArgoCD</div><div class="k8s-object-subtitle">Guide complet</div></div>
+          </div>
+          <pre><code># ── Installation ArgoCD ──────────────────
+kubectl create namespace argocd
+kubectl apply -n argocd -f \
+  https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=available \
+  deployment/argocd-server -n argocd --timeout=120s
+
+# Mot de passe admin
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d
+
+# UI : https://localhost:8080 (user: admin)
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# ── Déployer ─────────────────────────────
+kubectl apply -f argocd/project.yaml
+kubectl apply -f argocd/application-helm.yaml
+
+# ── Vérifier ─────────────────────────────
+kubectl get applications -n argocd
+argocd app list
+argocd app get demo-app-helm
+
+# ── Test Self-Heal ───────────────────────
+kubectl scale deployment demo-app -n demo-app --replicas=5
+# → ArgoCD remet à 2 automatiquement !
+
+# ── Test GitOps ──────────────────────────
+# 1. Modifier values.yaml → replicaCount: 3
+# 2. git commit && git push
+# 3. ArgoCD synchronise automatiquement !
+
+# ── Nettoyage ────────────────────────────
+kubectl delete -f argocd/application-helm.yaml
+kubectl delete -f argocd/project.yaml</code></pre>
         </div>
 
       </div>
