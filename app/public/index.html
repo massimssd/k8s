@@ -22,6 +22,11 @@
       </div>
     </div>
     <div class="header-right">
+      <div class="auth-status" id="auth-status">
+        <button class="btn btn-login" id="login-btn" onclick="openLoginModal()">
+          🔐 Connexion Admin
+        </button>
+      </div>
       <div class="health-indicator" id="health-indicator">
         <span class="health-dot"></span>
         <span class="health-text">Checking...</span>
@@ -134,6 +139,35 @@
 
   <!-- ── Toast notifications ───────────────────────────────── -->
   <div class="toast-container" id="toast-container"></div>
+
+  <!-- ── Modal Login (utilise ADMIN_PASSWORD du Secret K8s) ─── -->
+  <div class="modal-overlay" id="login-overlay" onclick="closeLoginModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3>🔐 Connexion Administrateur</h3>
+        <button class="modal-close" onclick="closeLoginModal()">×</button>
+      </div>
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="login-info">
+          <p>🔑 Le mot de passe est injecté depuis le <strong>Secret Kubernetes</strong> (<code>ADMIN_PASSWORD</code>).</p>
+          <p>Le token généré est signé avec <strong>APP_SECRET</strong> (HMAC-SHA256).</p>
+        </div>
+        <div class="form-group">
+          <label for="login-username">Nom d'utilisateur</label>
+          <input type="text" id="login-username" placeholder="admin" value="admin" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Mot de passe <span style="color:var(--danger);font-size:11px">(depuis K8s Secret)</span></label>
+          <input type="password" id="login-password" placeholder="Mot de passe admin..." required>
+        </div>
+        <div class="login-error" id="login-error" style="display:none"></div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeLoginModal()">Annuler</button>
+          <button type="submit" class="btn btn-primary">🔓 Se connecter</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ── Footer ────────────────────────────────────────────── -->
   <footer class="footer">

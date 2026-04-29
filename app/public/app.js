@@ -13,15 +13,19 @@ let state = {
   info: null,
   currentTab: 'notes',
   editingNoteId: null,
+  authToken: null,
+  authUser: null,
 };
 
 // ── Utilitaires API ─────────────────────────────────────────
 async function api(path, options = {}) {
   try {
-    const res = await fetch(path, {
-      headers: { 'Content-Type': 'application/json', ...options.headers },
-      ...options,
-    });
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    // Ajouter le token d'auth si connecté (signé avec APP_SECRET)
+    if (state.authToken) {
+      headers['Authorization'] = `Bearer ${state.authToken}`;
+    }
+    const res = await fetch(path, { headers, ...options });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
     return data;
@@ -52,10 +56,19 @@ async function updateNote(id, noteData) {
 }
 
 async function deleteNote(id) {
+  if (!state.authToken) {
+    showToast('🔒 Connexion requise pour supprimer (Secret K8s: ADMIN_PASSWORD)', 'error');
+    openLoginModal();
+    return;
+  }
   if (!confirm('Supprimer cette note ?')) return;
-  await api(`/api/notes/${id}`, { method: 'DELETE' });
-  showToast('Note supprimée', 'info');
-  fetchNotes();
+  try {
+    await api(`/api/notes/${id}`, { method: 'DELETE' });
+    showToast('Note supprimée', 'info');
+    fetchNotes();
+  } catch (err) {
+    showToast(`Erreur: ${err.message}`, 'error');
+  }
 }
 
 async function fetchFiles() {
@@ -86,10 +99,19 @@ async function uploadFile(file) {
 }
 
 async function deleteFile(filename) {
+  if (!state.authToken) {
+    showToast('🔒 Connexion requise pour supprimer (Secret K8s: ADMIN_PASSWORD)', 'error');
+    openLoginModal();
+    return;
+  }
   if (!confirm('Supprimer ce fichier ?')) return;
-  await api(`/api/files/${filename}`, { method: 'DELETE' });
-  showToast('Fichier supprimé', 'info');
-  fetchFiles();
+  try {
+    await api(`/api/files/${filename}`, { method: 'DELETE' });
+    showToast('Fichier supprimé', 'info');
+    fetchFiles();
+  } catch (err) {
+    showToast(`Erreur: ${err.message}`, 'error');
+  }
 }
 
 async function fetchConfig() {
@@ -144,6 +166,8 @@ function renderNotes() {
 
   const categoryIcons = { general: '📌', important: '🔴', idea: '💡', todo: '✅' };
 
+  const isAuth = !!state.authToken;
+
   grid.innerHTML = state.notes
     .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
     .map(note => `
@@ -157,7 +181,7 @@ function renderNotes() {
           <span class="note-date">${formatDate(note.updatedAt)}</span>
           <div class="note-actions">
             <button class="btn btn-ghost btn-sm" onclick="openModal('${note.id}')" title="Modifier">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteNote('${note.id}')" title="Supprimer">🗑️</button>
+            <button class="btn btn-danger btn-sm ${isAuth ? '' : 'btn-locked'}" onclick="deleteNote('${note.id}')" title="${isAuth ? 'Supprimer' : 'Connexion requise pour supprimer'}">🗑️</button>
           </div>
         </div>
       </div>
@@ -382,11 +406,74 @@ function getCatIcon(cat) {
   return icons[cat] || '📌';
 }
 
-// ── Raccourcis clavier ──────────────────────────────────────
+// ── Raccourcis clavier ──────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closeLoginModal(); }
   if (e.ctrlKey && e.key === 'n') { e.preventDefault(); openModal(); }
 });
+
+// ── UI : Login Modal ─────────────────────────────────────
+function openLoginModal() {
+  document.getElementById('login-overlay').classList.add('active');
+  document.getElementById('login-error').style.display = 'none';
+  setTimeout(() => document.getElementById('login-password').focus(), 100);
+}
+
+function closeLoginModal() {
+  document.getElementById('login-overlay').classList.remove('active');
+}
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const username = document.getElementById('login-username').value;
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+
+  try {
+    const data = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    }).then(r => r.json());
+
+    if (data.error) {
+      errorEl.textContent = `❌ ${data.error}`;
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    state.authToken = data.token;
+    state.authUser = data.user;
+    closeLoginModal();
+    updateAuthUI();
+    showToast(`✅ Connecté en tant que ${data.user} (token signé avec APP_SECRET)`, 'success');
+    renderNotes();
+  } catch (err) {
+    errorEl.textContent = `❌ Erreur: ${err.message}`;
+    errorEl.style.display = 'block';
+  }
+}
+
+function logout() {
+  state.authToken = null;
+  state.authUser = null;
+  updateAuthUI();
+  showToast('Déconnecté', 'info');
+  renderNotes();
+}
+
+function updateAuthUI() {
+  const btn = document.getElementById('login-btn');
+  if (state.authToken) {
+    btn.className = 'btn btn-login authenticated';
+    btn.innerHTML = `✅ ${state.authUser} <span style="font-size:11px;margin-left:6px;cursor:pointer" onclick="event.stopPropagation();logout()">❌</span>`;
+    btn.onclick = null;
+  } else {
+    btn.className = 'btn btn-login';
+    btn.innerHTML = '🔐 Connexion Admin';
+    btn.onclick = openLoginModal;
+  }
+}
 
 // ── Initialisation ──────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {

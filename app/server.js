@@ -62,6 +62,48 @@ function log(level, message) {
   }
 }
 
+// ── Authentification (utilise APP_SECRET et ADMIN_PASSWORD) ─
+// Génère un token HMAC signé avec APP_SECRET (depuis le Secret K8s)
+function generateToken(username) {
+  const payload = JSON.stringify({
+    user: username,
+    iat: Date.now(),
+    exp: Date.now() + 3600000, // 1 heure
+  });
+  const payloadB64 = Buffer.from(payload).toString('base64');
+  const signature = crypto.createHmac('sha256', APP_SECRET).update(payloadB64).digest('hex');
+  return `${payloadB64}.${signature}`;
+}
+
+// Vérifie un token signé avec APP_SECRET
+function verifyToken(token) {
+  try {
+    const [payloadB64, signature] = token.split('.');
+    const expectedSig = crypto.createHmac('sha256', APP_SECRET).update(payloadB64).digest('hex');
+    if (signature !== expectedSig) return null;
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString());
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+// Middleware d'authentification
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentification requise. Connectez-vous d\'abord.' });
+  }
+  const token = authHeader.substring(7);
+  const payload = verifyToken(token);
+  if (!payload) {
+    return res.status(401).json({ error: 'Token invalide ou expiré. Reconnectez-vous.' });
+  }
+  req.user = payload;
+  next();
+}
+
 // ── Middleware ───────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -70,6 +112,49 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
   log('info', `${req.method} ${req.url} - ${req.ip}`);
   next();
+});
+
+// ── Authentification API ────────────────────────────────────
+
+// Login - vérifie le mot de passe ADMIN_PASSWORD (depuis le Secret K8s)
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Nom d\'utilisateur et mot de passe requis' });
+  }
+  // ADMIN_PASSWORD provient du Secret Kubernetes
+  if (password !== ADMIN_PASSWORD) {
+    log('warn', `Tentative de login échouée pour: ${username}`);
+    return res.status(401).json({ error: 'Mot de passe incorrect' });
+  }
+  // Générer un token signé avec APP_SECRET (depuis le Secret K8s)
+  const token = generateToken(username);
+  log('info', `Login réussi pour: ${username}`);
+  res.json({
+    message: 'Connexion réussie',
+    user: username,
+    token,
+    expiresIn: '1h',
+    secretUsed: 'APP_SECRET (HMAC-SHA256)',
+  });
+});
+
+// Vérifier le statut d'authentification
+app.get('/api/auth/status', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.json({ authenticated: false });
+  }
+  const payload = verifyToken(authHeader.substring(7));
+  if (!payload) {
+    return res.json({ authenticated: false, reason: 'Token expiré ou invalide' });
+  }
+  res.json({
+    authenticated: true,
+    user: payload.user,
+    expiresAt: new Date(payload.exp).toISOString(),
+    tokenSignedWith: 'APP_SECRET (K8s Secret)',
+  });
 });
 
 // ── Endpoints de santé et configuration ─────────────────────
@@ -193,15 +278,15 @@ app.put('/api/notes/:id', (req, res) => {
   res.json(notes[idx]);
 });
 
-// Supprimer une note
-app.delete('/api/notes/:id', (req, res) => {
+// Supprimer une note (protégé par authentification)
+app.delete('/api/notes/:id', requireAuth, (req, res) => {
   const notes = readNotes();
   const idx = notes.findIndex(n => n.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Note introuvable' });
 
   const deleted = notes.splice(idx, 1)[0];
   writeNotes(notes);
-  log('info', `Note supprimée: ${deleted.id}`);
+  log('info', `Note supprimée par ${req.user.user}: ${deleted.id}`);
   res.json({ message: 'Note supprimée', note: deleted });
 });
 
@@ -257,13 +342,13 @@ app.get('/api/files/:filename', (req, res) => {
   res.download(filePath);
 });
 
-app.delete('/api/files/:filename', (req, res) => {
+app.delete('/api/files/:filename', requireAuth, (req, res) => {
   const filePath = path.join(UPLOADS_DIR, path.basename(req.params.filename));
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Fichier introuvable' });
   }
   fs.unlinkSync(filePath);
-  log('info', `Fichier supprimé: ${req.params.filename}`);
+  log('info', `Fichier supprimé par ${req.user.user}: ${req.params.filename}`);
   res.json({ message: 'Fichier supprimé' });
 });
 
