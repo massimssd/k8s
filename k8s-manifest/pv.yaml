@@ -1,0 +1,15 @@
+# https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-front
+spec:
+  storageClassName: demo-storage
+  capacity:
+    storage: 1Gi
+  accessModes:
+  - ReadWriteOnce
+  hostPath:
+    path: /tmp/demo-app-data
+    type: DirectoryOrCreate
+  persistentVolumeReclaimPolicy: Retain
